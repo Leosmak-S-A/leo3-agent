@@ -1,0 +1,77 @@
+#!/bin/bash
+# leo3-agent — Leosmak Leo3 fleet heartbeat daemon
+#
+# Runs as a snap daemon (restart-condition: always, restart-delay: 5m).
+# Performs one check-in to the admin panel, then exits cleanly.
+# snapd restarts it every 5 minutes automatically.
+#
+# Per-device configuration (run once after install):
+#   sudo snap set leo3-agent serial=LEO3-009
+#   sudo snap set leo3-agent admin-url=http://192.168.0.10:2105
+#
+set -euo pipefail
+
+# ── Configuration ─────────────────────────────────────────────────────────────
+
+ADMIN_URL="$(snapctl get admin-url 2>/dev/null || true)"
+ADMIN_URL="${ADMIN_URL:-http://192.168.0.116:2105}"
+CHECKIN_URL="${ADMIN_URL}/api/v2/Leosmak/admin//tasks/leo3_checkin"
+
+# Serial number — configurable or auto-derived from CPU serial
+SERIAL="$(snapctl get serial 2>/dev/null || true)"
+if [ -z "${SERIAL}" ]; then
+    RAW="$(grep -oP 'Serial\s*:\s*\K[0-9a-fA-F]+' /proc/cpuinfo 2>/dev/null | tail -1 || true)"
+    if [ -n "${RAW}" ]; then
+        SERIAL="LEO3-${RAW: -8}"
+    else
+        SERIAL="LEO3-UNKNOWN"
+    fi
+fi
+
+# ── Hardware info ─────────────────────────────────────────────────────────────
+
+# HMI version — read from installed leo-control-3 snap
+HMI_VER="$(snap list leo-control-3 2>/dev/null | awk 'NR==2{print $2}' || echo "not-installed")"
+
+# Firmware version — same as this snap's version
+FW_VER="${SNAP_VERSION:-unknown}"
+
+# CPU description
+CPU="$(grep -m1 'Model name' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs 2>/dev/null || \
+       grep -m1 'Model' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs 2>/dev/null || \
+       grep -m1 'Hardware' /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs 2>/dev/null || \
+       echo "unknown")"
+
+# RAM — total memory
+RAM_KB="$(grep -oP 'MemTotal:\s*\K\d+' /proc/meminfo 2>/dev/null || echo 0)"
+RAM="$(awk "BEGIN{printf \"%.0fGB\", ${RAM_KB}/1048576}")"
+
+# OS / kernel
+OS_VER="$(uname -r)"
+
+# IP address — first non-loopback address
+IP="$(hostname -I 2>/dev/null | tr ' ' '\n' | grep -v '^$' | head -1 || echo "unknown")"
+
+# ── Check-in ─────────────────────────────────────────────────────────────────
+
+echo "[leo3-agent] serial=${SERIAL} fw_ver=${FW_VER} hmi_ver=${HMI_VER} ip=${IP}"
+
+RESPONSE="$(curl -sf -u "admin:kzk" \
+    --connect-timeout 10 \
+    --max-time 30 \
+    "${CHECKIN_URL}" \
+    --data-urlencode "serial=${SERIAL}" \
+    --data-urlencode "fw_ver=${FW_VER}" \
+    --data-urlencode "hmi_ver=${HMI_VER}" \
+    --data-urlencode "cpu=${CPU}" \
+    --data-urlencode "ram=${RAM}" \
+    --data-urlencode "os=${OS_VER}" \
+    --data-urlencode "ip=${IP}" \
+    2>&1)" && {
+    echo "[leo3-agent] check-in OK: ${RESPONSE}"
+} || {
+    echo "[leo3-agent] check-in FAILED (will retry in 5m): ${RESPONSE}"
+}
+
+# Exit cleanly — snapd restart-delay:5m will re-run us
+exit 0

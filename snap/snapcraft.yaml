@@ -1,0 +1,31 @@
+name: leo3-agent
+version: '0.1.0'
+base: core24
+summary: Leo3 Fleet Agent
+description: |
+  Heartbeat daemon for Leo3 industrial Pi devices.
+  Reports hardware/software info to the Leosmak admin panel.
+  Runs every 5 minutes. Configured per-device via snap set.
+
+grade: stable
+confinement: devmode
+
+platforms:
+  arm64:
+
+apps:
+  leo3-agent:
+    command: bin/leo3-agent
+    daemon: simple
+    restart-condition: always
+    restart-delay: 5m
+    plugs:
+      - network
+      - hardware-observe
+
+parts:
+  agent:
+    plugin: dump
+    source: src/
+    organize:
+      leo3-agent: bin/leo3-agent
