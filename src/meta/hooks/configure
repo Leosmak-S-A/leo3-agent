@@ -1,0 +1,3 @@
+#!/bin/sh
+# configure hook — allows: sudo snap set leo3-agent admin-url=http://... serial=LEO3-xxx
+exit 0
