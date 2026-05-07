@@ -29,3 +29,5 @@ parts:
     source: src/
     organize:
       leo3-agent: bin/leo3-agent
+    stage-packages:
+      - curl
