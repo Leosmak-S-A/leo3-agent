@@ -14,7 +14,7 @@ set -euo pipefail
 # ── Configuration ─────────────────────────────────────────────────────────────
 
 ADMIN_URL="$(snapctl get admin-url 2>/dev/null || true)"
-ADMIN_URL="${ADMIN_URL:-http://192.168.0.116:2105}"
+ADMIN_URL="${ADMIN_URL:-http://192.168.0.249:2105}"
 CHECKIN_URL="${ADMIN_URL}/api/v2/Leosmak/admin//tasks/leo3_checkin"
 
 # Serial number — configurable or auto-derived from CPU serial
