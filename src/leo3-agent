@@ -70,17 +70,40 @@ RESPONSE="$(curl -sf -u "admin:kzk" \
     2>&1)" && {
     echo "[leo3-agent] check-in OK: ${RESPONSE}"
 
-    # ── Channel switching ──────────────────────────────────────────────────────
-    # If admin panel returns a desired_channel, switch to it automatically.
-    # Admin panel sets this per-device via the fleet management UI.
-    DESIRED_CH="$(echo "${RESPONSE}" | grep -oP '"desired_channel"\s*:\s*"\K[^"]+' || true)"
-    if [ -n "${DESIRED_CH}" ]; then
+    # ── Channel & update handling ──────────────────────────────────────────────
+    # Admin panel returns channel_agent, channel_firmware, and update_status.
+    # update_status: none | agent | firmware | both — admin-approved forced refresh.
+
+    CHANNEL_AGENT="$(echo "${RESPONSE}" | grep -oP '"channel_agent"\s*:\s*"\K[^"]+' || true)"
+    CHANNEL_FIRMWARE="$(echo "${RESPONSE}" | grep -oP '"channel_firmware"\s*:\s*"\K[^"]+' || true)"
+    UPDATE_STATUS="$(echo "${RESPONSE}" | grep -oP '"update_status"\s*:\s*"\K[^"]+' || true)"
+
+    # Agent snap: switch channel if admin set a different one
+    if [ -n "${CHANNEL_AGENT}" ]; then
         CURRENT_CH="$(snap list leo3-agent 2>/dev/null | awk 'NR==2{print $4}')"
-        if [ "${DESIRED_CH}" != "${CURRENT_CH}" ]; then
-            echo "[leo3-agent] Channel change requested: ${CURRENT_CH} -> ${DESIRED_CH}"
-            snap refresh leo3-agent --channel="${DESIRED_CH}" --devmode 2>&1 || \
-                echo "[leo3-agent] Channel switch failed (will retry next cycle)"
+        if [ "${CHANNEL_AGENT}" != "${CURRENT_CH}" ]; then
+            echo "[leo3-agent] Channel change requested: ${CURRENT_CH} -> ${CHANNEL_AGENT}"
+            snap refresh leo3-agent --channel="${CHANNEL_AGENT}" --devmode 2>&1 || \
+                echo "[leo3-agent] Agent channel switch failed (will retry next cycle)"
         fi
+    fi
+
+    # Admin-approved forced refresh for agent
+    if [ "${UPDATE_STATUS}" = "agent" ] || [ "${UPDATE_STATUS}" = "both" ]; then
+        echo "[leo3-agent] Admin-approved agent update — refreshing now"
+        snap refresh leo3-agent --devmode 2>&1 || \
+            echo "[leo3-agent] Agent refresh failed (will retry next cycle)"
+    fi
+
+    # Admin-approved forced refresh for firmware (leo-control-3)
+    if [ "${UPDATE_STATUS}" = "firmware" ] || [ "${UPDATE_STATUS}" = "both" ]; then
+        echo "[leo3-agent] Admin-approved firmware update — refreshing leo-control-3"
+        REFRESH_CMD="snap refresh leo-control-3 --devmode"
+        if [ -n "${CHANNEL_FIRMWARE}" ]; then
+            REFRESH_CMD="snap refresh leo-control-3 --channel=${CHANNEL_FIRMWARE} --devmode"
+        fi
+        ${REFRESH_CMD} 2>&1 || \
+            echo "[leo3-agent] Firmware refresh failed (will retry next cycle)"
     fi
 } || {
     echo "[leo3-agent] check-in FAILED (will retry in 5m): ${RESPONSE}"
