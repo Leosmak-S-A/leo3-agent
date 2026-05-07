@@ -69,6 +69,19 @@ RESPONSE="$(curl -sf -u "admin:kzk" \
     --data-urlencode "ip=${IP}" \
     2>&1)" && {
     echo "[leo3-agent] check-in OK: ${RESPONSE}"
+
+    # ── Channel switching ──────────────────────────────────────────────────────
+    # If admin panel returns a desired_channel, switch to it automatically.
+    # Admin panel sets this per-device via the fleet management UI.
+    DESIRED_CH="$(echo "${RESPONSE}" | grep -oP '"desired_channel"\s*:\s*"\K[^"]+' || true)"
+    if [ -n "${DESIRED_CH}" ]; then
+        CURRENT_CH="$(snap list leo3-agent 2>/dev/null | awk 'NR==2{print $4}')"
+        if [ "${DESIRED_CH}" != "${CURRENT_CH}" ]; then
+            echo "[leo3-agent] Channel change requested: ${CURRENT_CH} -> ${DESIRED_CH}"
+            snap refresh leo3-agent --channel="${DESIRED_CH}" --devmode 2>&1 || \
+                echo "[leo3-agent] Channel switch failed (will retry next cycle)"
+        fi
+    fi
 } || {
     echo "[leo3-agent] check-in FAILED (will retry in 5m): ${RESPONSE}"
 }
